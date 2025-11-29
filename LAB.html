@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OBSIV — Portfolio</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header>
+    <h1>OBSIV</h1>
+    <p class="subtitle">Design • Creative Direction • AIGC Vision</p>
+</header>
+
+<section class="intro">
+    <p>
+        我是专注于运动品牌、未来感视觉、AIGC 创作的设计师。  
+        这里展示我的精选作品，包括品牌视觉、AI 视频、插画风格探索、空间设计、与运动品牌合作项目。
+    </p>
+</section>
+
+<section id="projects" class="grid"></section>
+
+<footer>
+    <p>© OBSIV — Crafted with GitHub Pages</p>
+</footer>
+
+<script>
+    async function loadProjects() {
+        const container = document.getElementById("projects");
+        const res = await fetch("projects.json");
+        const data = await res.json();
+        
+        data.forEach(item => {
+            const card = document.createElement("div");
+            card.className = "card";
+            card.innerHTML = `
+                <img src="${item.image}" alt="${item.title}">
+                <h3>${item.title}</h3>
+                <p>${item.desc}</p>
+            `;
+            container.appendChild(card);
+        });
+    }
+    loadProjects();
+</script>
+
+</body>
+</html>
