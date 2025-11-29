@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Classic 4-Player Mahjong</title>
+    <style>
+        :root {
+            --table-bg: #2d6a4f; /* 经典深绿绒布色 */
+            --tile-w: 48px;
+            --tile-h: 64px;
+            --tile-depth: 6px;
+            --tile-face: #f8f9fa;
+            --tile-back: #1b4332; /* 深绿背 */
+            --highlight: #ffec99;
+        }
+
+        body {
+            margin: 0;
+            background-color: #1e1e1e;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+            font-family: "Kaiti SC", "STKaiti", "KaiTi", serif;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        /* --- 麻将桌容器 --- */
+        #mahjong-table {
+            width: 100vmin;
+            height: 100vmin;
+            background-color: var(--table-bg);
+            position: relative;
+            box-shadow: 0 0 50px rgba(0,0,0,0.8);
+            border-radius: 20px;
+            display: grid;
+            grid-template-rows: 1fr 2fr 1fr;
+            grid-template-columns: 1fr 2fr 1fr;
+        }
+
+        /* --- 中央弃牌区 --- */
+        #center-area {
+            grid-row: 2;
+            grid-column: 2;
+            background: rgba(0,0,0,0.1);
+            border-radius: 12px;
+            position: relative;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            grid-template-rows: 1fr 1fr;
+            gap: 4px;
+            padding: 10px;
+        }
+
+        .discard-zone {
+            display: flex;
+            flex-wrap: wrap;
+            align-content: flex-start;
+            gap: 2px;
+        }
+        
+        /* 旋转弃牌区以面向各方 */
+        #discard-0 { transform: rotate(0deg); justify-content: center; grid-row: 2; grid-column: 1 / span 2; margin-top: auto;}
+        #discard-1 { transform: rotate(-90deg); flex-direction: row-reverse; grid-row: 1 / span 2; grid-column: 2; align-items: center; justify-content: flex-start; height: 100%; width: 100%;}
+        #discard-2 { transform: rotate(180deg); justify-content: center; grid-row: 1; grid-column: 1 / span 2; margin-bottom: auto;}
+        #discard-3 { transform: rotate(90deg); flex-direction: row-reverse; grid-row: 1 / span 2; grid-column: 1; align-items: center; justify-content: flex-start; height: 100%; width: 100%;}
+
+        /* 小牌尺寸 (弃牌) */
+        .tile-sm {
+            width: 28px;
+            height: 38px;
+            background: var(--tile-face);
+            border-radius: 3px;
+            box-shadow: 1px 1px 2px rgba(0,0,0,0.3);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        /* --- 玩家区域 --- */
+        .player-hand {
+            position: absolute;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        /* 0: 玩家 (底部) */
+        #p0 {
+            bottom: 10px;
+            left: 0;
+            right: 0;
+            height: 90px;
+            perspective: 1000px;
+            z-index: 100;
+        }
+
+        /* 1: 电脑右 */
+        #p1 {
+            right: 10px;
+            top: 0;
+            bottom: 0;
+            width: 40px;
+            flex-direction: column;
+        }
+
+        /* 2: 电脑上 */
+        #p2 {
+            top: 10px;
+            left: 0;
+            right: 0;
+            height: 50px;
+        }
+
+        /* 3: 电脑左 */
+        #p3 {
+            left: 10px;
+            top: 0;
+            bottom: 0;
+            width: 40px;
+            flex-direction: column;
+        }
+
+        /* --- 牌样式 --- */
+        .tile {
+            width: var(--tile-w);
+            height: var(--tile-h);
+            background: var(--tile-face);
+            border-radius: 4px;
+            box-shadow: 
+                1px 1px 0 #ccc,
+                2px 2px 0 #bbb,
+                3px 3px 0 #999,
+                3px 5px 6px rgba(0,0,0,0.4);
+            position: relative;
+            margin: 0 1px;
+            cursor: pointer;
+            transition: transform 0.2s, margin 0.3s;
+            border: 1px solid #e9ecef;
+        }
+        
+        /* 玩家选中的牌 */
+        .tile.selected {
+            transform: translateY(-15px);
+            border: 2px solid var(--highlight);
+            z-index: 10;
+        }
+
+        /* 刚摸的牌 (隔断) */
+        .tile.draw {
+            margin-left: 15px;
+        }
+
+        /* 电脑的牌背 (立着) */
+        .tile-back-v {
+            width: 24px;
+            height: 44px;
+            background: var(--tile-back);
+            border-radius: 3px;
+            border: 1px solid rgba(255,255,255,0.2);
+            margin: 1px 0;
+            box-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        /* 电脑的牌背 (横着/对着) */
+        .tile-back-h {
+            width: 36px;
+            height: 52px;
+            background: var(--tile-back);
+            border-radius: 4px;
+            border: 1px solid rgba(255,255,255,0.2);
+            margin: 0 1px;
+            box-shadow: 1px 3px 4px rgba(0,0,0,0.3);
+        }
+
+        /* --- 操作按钮 --- */
+        #controls {
+            position: absolute;
+            bottom: 120px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 15px;
+            z-index: 200;
+        }
+
+        button {
+            background: #d6336c;
+            color: white;
+            font-weight: bold;
+            border: none;
+            padding: 10px 30px;
+            border-radius: 30px;
+            font-size: 16px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+            opacity: 0;
+            pointer-events: none;
+            transform: scale(0.9);
+            transition: 0.2s;
+        }
+        button.show {
+            opacity: 1;
+            pointer-events: auto;
+            transform: scale(1);
+        }
+        button:active { transform: scale(0.95); }
+
+        /* --- 状态提示 --- */
+        #status-bar {
+            position: absolute;
+            top: 45%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.6);
+            color: white;
+            padding: 8px 20px;
+            border-radius: 20px;
+            font-size: 14px;
+            pointer-events: none;
+            backdrop-filter: blur(4px);
+        }
+        
+        .indicator {
+            width: 10px; height: 10px; border-radius: 50%; background: #aaa;
+            position: absolute;
+        }
+        /* 指示当前出牌方 */
+        .active-indicator { background: #ffd43b; box-shadow: 0 0 8px #ffd43b; }
+        
+        #ind-0 { bottom: 20px; left: 50%; }
+        #ind-1 { right: 20px; top: 50%; }
+        #ind-2 { top: 20px; left: 50%; }
+        #ind-3 { left: 20px; top: 50%; }
+
+        /* 移动端优化 */
+        @media (max-width: 600px) {
+            :root { --tile-w: 38px; --tile-h: 52px; }
+            #p0 { bottom: 5px; }
+            #controls { bottom: 100px; }
+            .tile-sm { width: 22px; height: 30px; }
+        }
+    </style>
+</head>
+<body>
+
+<div id="mahjong-table">
+    <!-- 弃牌区 -->
+    <div id="center-area">
+        <div id="discard-3" class="discard-zone"></div> <!-- 左 -->
+        <div id="discard-2" class="discard-zone"></div> <!-- 上 -->
+        <div id="discard-1" class="discard-zone"></div> <!-- 右 -->
+        <div id="discard-0" class="discard-zone"></div> <!-- 玩家 -->
+        
+        <div id="status-bar">等待开局...</div>
+        
+        <div id="ind-0" class="indicator"></div>
+        <div id="ind-1" class="indicator"></div>
+        <div id="ind-2" class="indicator"></div>
+        <div id="ind-3" class="indicator"></div>
+    </div>
+
+    <!-- 玩家/电脑 手牌区 -->
+    <div id="p2" class="player-hand"></div> <!-- 上 -->
+    <div id="p3" class="player-hand"></div> <!-- 左 -->
+    <div id="p1" class="player-hand"></div> <!-- 右 -->
+    <div id="p0" class="player-hand"></div> <!-- 玩家 -->
+
+    <!-- 玩家操作 -->
+    <div id="controls">
+        <button id="btn-discard">出牌</button>
+    </div>
+</div>
+
+<script>
+/**
+ * 经典 SVG 麻将渲染引擎
+ * 特点：极高的识别度，仿真实体牌面
+ */
+const SVGMaker = {
+    colors: {
+        m: '#8B0000', // 万 - 深红
+        p: '#1864AB', // 筒 - 靛蓝
+        s: '#2B8A3E', // 条 - 竹绿
+        z_red: '#C92A2A', // 中
+        z_green: '#2B8A3E', // 发
+        z_blue: '#1c7ed6', // 白板框
+        black: '#212529'
+    },
+
+    create(type, val) {
+        let content = '';
+        const vb = "0 0 100 128"; // 牌面比例 3:4 略长
+
+        if (type === 'm') { // 万 (经典样式：上数字 下红万)
+            const chineseNums = ['壹','贰','叁','肆','伍','陆','柒','捌','玖'];
+            content = `
+                <text x="50" y="60" text-anchor="middle" font-size="60" fill="${this.colors.m}" font-weight="bold" style="font-family: 'Kaiti SC', serif">${chineseNums[val-1]}</text>
+                <text x="50" y="110" text-anchor="middle" font-size="36" fill="${this.colors.m}" font-weight="bold" style="font-family: 'Kaiti SC', serif">万</text>
+            `;
+        } 
+        else if (type === 'p') { // 筒 (大圆圈)
+            const c = this.colors.p;
+            const r = this.colors.m; // 部分红点
+            
+            // 辅助画圆函数
+            const circle = (cx, cy, fill) => `<circle cx="${cx}" cy="${cy}" r="14" fill="${fill}" stroke="#eee" stroke-width="2"/>`;
+            
+            if (val === 1) content = `<circle cx="50" cy="64" r="36" fill="${r}" /><circle cx="50" cy="64" r="20" fill="none" stroke="white" stroke-width="4" stroke-dasharray="4,4"/>`;
+            else if (val === 2) content = circle(50,30,c) + circle(50,98,c);
+            else if (val === 3) content = circle(25,25,c) + circle(50,64,r) + circle(75,103,c);
+            else if (val === 4) content = circle(28,28,c) + circle(72,28,c) + circle(28,100,c) + circle(72,100,c);
+            else if (val === 5) content = circle(25,25,c) + circle(75,25,c) + circle(50,64,r) + circle(25,103,c) + circle(75,103,c);
+            else if (val === 6) content = circle(28,25,c)+circle(72,25,c) + circle(28,64,c)+circle(72,64,c) + circle(28,103,c)+circle(72,103,c);
+            else if (val === 7) content = circle(25,20,c)+circle(50,25,c)+circle(75,30,c) + circle(28,68,c)+circle(72,68,c) + circle(28,105,c)+circle(72,105,c); // 斜线
+            else if (val === 8) content = circle(28,20,c)+circle(72,20,c) + circle(28,50,c)+circle(72,50,c) + circle(28,80,c)+circle(72,80,c) + circle(28,110,c)+circle(72,110,c);
+            else if (val === 9) content = [25,64,103].map(y => circle(25,y,c)+circle(50,y,c)+circle(75,y,c)).join('');
+        }
+        else if (type === 's') { // 条 (竹索)
+            const g = this.colors.s;
+            const r = this.colors.m;
+            // 辅助画条函数
+            const stick = (x, y, fill) => `<rect x="${x-6}" y="${y-16}" width="12" height="32" rx="3" fill="${fill}" />`;
+
+            if (val === 1) { // 幺鸡 (抽象孔雀)
+                 content = `
+                    <path d="M50 30 Q75 30 75 55 Q75 90 50 90 Q25 90 25 55 Q25 30 50 30 Z" fill="none" stroke="${g}" stroke-width="4"/>
+                    <circle cx="50" cy="45" r="4" fill="${this.colors.black}"/>
+                    <path d="M50 90 L50 110 M40 110 L60 110" stroke="${r}" stroke-width="4"/>
+                    <text x="50" y="75" text-anchor="middle" font-size="24" fill="${g}">鳥</text>
+                 `;
+            }
+            else if (val === 2) content = stick(50, 35, g) + stick(50, 90, g);
+            else if (val === 3) content = stick(50, 30, g) + stick(35, 90, g) + stick(65, 90, g);
+            else if (val === 4) content = stick(30, 35, g) + stick(70, 35, g) + stick(30, 90, g) + stick(70, 90, g);
+            else if (val === 5) content = stick(30, 35, g) + stick(70, 35, g) + stick(50, 64, r) + stick(30, 90, g) + stick(70, 90, g);
+            else if (val === 6) content = stick(35,35,g)+stick(65,35,g) + stick(35,64,g)+stick(65,64,g) + stick(35,93,g)+stick(65,93,g);
+            else if (val === 8) content = `M 30 30` + stick(35,30,g)+stick(65,30,g) + stick(35,55,g)+stick(65,55,g) + stick(35,80,g)+stick(65,80,g) + stick(35,105,g)+stick(65,105,g);
+            
+            // 7 和 9 略复杂，使用简化组合
+            if(val === 7 || val === 9) {
+                // 偷懒：用粗线条画
+                 const cols = val === 7 ? [r, g, g] : [g, r, g];
+                 let step = 128 / 4;
+                 if (val === 7) content = stick(50,30,r) + stick(35,64,g)+stick(65,64,g) + stick(30,96,g)+stick(50,96,g)+stick(70,96,g);
+                 if (val === 9) content = stick(30,30,g)+stick(50,30,g)+stick(70,30,g) + stick(30,64,r)+stick(50,64,r)+stick(70,64,r) + stick(30,98,g)+stick(50,98,g)+stick(70,98,g);
+            }
+        }
+        else if (type === 'z') { // 字
+            const map = ['东','南','西','北','中','发','白'];
+            const colors = [this.colors.black, this.colors.black, this.colors.black, this.colors.black, this.colors.z_red, this.colors.z_green, this.colors.z_blue];
+            const label = map[val-1];
+            const color = colors[val-1];
+            
+            if(val === 7) { // 白板
+                content = `<rect x="15" y="15" width="70" height="98" fill="none" stroke="${color}" stroke-width="4" rx="4"/>`;
+            } else {
+                content = `<text x="50" y="80" text-anchor="middle" font-size="72" fill="${color}" font-family="serif" font-weight="bold">${label}</text>`;
+            }
+        }
+
+        return `<svg viewBox="${vb}" width="100%" height="100%">${content}</svg>`;
+    }
+};
+
+/**
+ * 游戏逻辑核心
+ */
+class Game {
+    constructor() {
+        this.players = [
+            { id:0, name:'我', isBot:false, hand:[], discards:[] },
+            { id:1, name:'下家', isBot:true, hand:[], discards:[] },
+            { id:2, name:'对家', isBot:true, hand:[], discards:[] },
+            { id:3, name:'上家', isBot:true, hand:[], discards:[] }
+        ];
+        this.deck = [];
+        this.activePlayerIndex = 0; // 0=玩家, 1=右, 2=上, 3=左
+        this.turnPhase = 'draw'; // 'draw' 或 'discard'
+        this.selectedIndex = -1;
+        
+        this.init();
+    }
+
+    init() {
+        this.generateDeck();
+        this.dealTiles();
+        this.updateUI();
+        
+        // 庄家(我是0)先摸一张
+        this.setStatus("游戏开始，轮到你了");
+        this.playerDraw(0);
+    }
+
+    generateDeck() {
+        this.deck = [];
+        const types = ['m','p','s','z'];
+        types.forEach(t => {
+            const max = t === 'z' ? 7 : 9;
+            for(let v=1; v<=max; v++) {
+                for(let k=0; k<4; k++) this.deck.push({type:t, val:v, id:`${t}${v}-${k}`});
+            }
+        });
+        this.deck.sort(() => Math.random() - 0.5);
+    }
+
+    dealTiles() {
+        // 每人发13张
+        for(let i=0; i<13; i++) {
+            this.players.forEach(p => p.hand.push(this.deck.shift()));
+        }
+        this.players.forEach(p => this.sortHand(p.hand));
+    }
+
+    sortHand(hand) {
+        hand.sort((a, b) => {
+            const order = {m:1, p:2, s:3, z:4};
+            if (order[a.type] !== order[b.type]) return order[a.type] - order[b.type];
+            return a.val - b.val;
+        });
+    }
+
+    // --- 回合流程 ---
+
+    nextTurn() {
+        this.activePlayerIndex = (this.activePlayerIndex + 1) % 4;
+        this.updateIndicators();
+        
+        const p = this.players[this.activePlayerIndex];
+        
+        // 检查牌堆
+        if(this.deck.length === 0) {
+            this.setStatus("流局！没有牌了。");
+            return;
+        }
+
+        this.setStatus(`轮到 ${p.name}`);
+        
+        // 延迟一下让节奏更舒服
+        setTimeout(() => {
+            this.playerDraw(this.activePlayerIndex);
+        }, 500);
+    }
+
+    playerDraw(pid) {
+        const p = this.players[pid];
+        const tile = this.deck.shift();
+        p.hand.push(tile);
+        p.lastDraw = tile; // 标记刚摸的牌
+        
+        this.updateUI();
+
+        if(p.isBot) {
+            this.botThinkAndDiscard(pid);
+        } else {
+            // 玩家回合，解锁UI
+            this.setStatus("请出牌...");
+            this.toggleControls(true);
+        }
+    }
+
+    playerDiscard(pid, tileIndex) {
+        const p = this.players[pid];
+        
+        // 如果是数组最后一张，说明出的是刚摸的牌
+        const tile = p.hand.splice(tileIndex, 1)[0];
+        p.discards.push(tile);
+        
+        // 出牌后重新理牌 (玩家的牌已经在视觉上理好了，逻辑上再排一次无妨)
+        this.sortHand(p.hand);
+        p.lastDraw = null;
+        this.selectedIndex = -1;
+
+        this.updateUI();
+        this.toggleControls(false); // 锁住按钮
+        
+        this.nextTurn();
+    }
+
+    // --- 电脑逻辑 (简单版) ---
+    botThinkAndDiscard(pid) {
+        const p = this.players[pid];
+        
+        // 模拟思考时间 1~2秒
+        const thinkTime = 1000 + Math.random() * 1000;
+        
+        setTimeout(() => {
+            // 简单AI：优先打字牌，没有字牌打边张(1,9)，否则随机
+            // 实际上这里我们简单随机选一张非刚摸的，或者直接打刚摸的(如果不好)
+            // 为了演示效果，随机出
+            const idx = Math.floor(Math.random() * p.hand.length);
+            this.playerDiscard(pid, idx);
+        }, thinkTime);
+    }
+
+    // --- 交互处理 ---
+    
+    onTileClick(index) {
+        if(this.activePlayerIndex !== 0) return; // 不是你的回合
+
+        if (this.selectedIndex === index) {
+            // 双击出牌
+            this.playerDiscard(0, index);
+        } else {
+            this.selectedIndex = index;
+            this.updateUI(); // 更新选中状态
+            // 高亮出牌按钮
+            const btn = document.getElementById('btn-discard');
+            btn.classList.add('show');
+            btn.onclick = () => this.playerDiscard(0, index);
+        }
+    }
+
+    // --- UI 更新 ---
+
+    setStatus(msg) {
+        document.getElementById('status-bar').textContent = msg;
+    }
+
+    toggleControls(enable) {
+        const btn = document.getElementById('btn-discard');
+        if(!enable) {
+            btn.classList.remove('show');
+            btn.onclick = null;
+        }
+    }
+    
+    updateIndicators() {
+        for(let i=0; i<4; i++) {
+            const el = document.getElementById(`ind-${i}`);
+            if(i === this.activePlayerIndex) el.classList.add('active-indicator');
+            else el.classList.remove('active-indicator');
+        }
+    }
+
+    updateUI() {
+        // 1. 渲染所有人的弃牌
+        this.players.forEach(p => {
+            const zone = document.getElementById(`discard-${p.id}`);
+            zone.innerHTML = p.discards.map(t => `
+                <div class="tile-sm">${SVGMaker.create(t.type, t.val)}</div>
+            `).join('');
+        });
+
+        // 2. 渲染玩家手牌
+        const myHandDiv = document.getElementById('p0');
+        const p0 = this.players[0];
+        myHandDiv.innerHTML = '';
+        p0.hand.forEach((t, i) => {
+            const isDraw = (t === p0.lastDraw); // 是否是刚摸的
+            const div = document.createElement('div');
+            div.className = `tile ${isDraw ? 'draw' : ''} ${i === this.selectedIndex ? 'selected' : ''}`;
+            div.innerHTML = SVGMaker.create(t.type, t.val);
+            div.onclick = () => this.onTileClick(i);
+            myHandDiv.appendChild(div);
+        });
+
+        // 3. 渲染电脑手牌 (只显示背部)
+        [1,2,3].forEach(pid => {
+            const div = document.getElementById(`p${pid}`);
+            const count = this.players[pid].hand.length;
+            // 简单的循环生成背面
+            // 左右是竖着的，上是横着的
+            const isVertical = (pid === 1 || pid === 3);
+            const cls = isVertical ? 'tile-back-v' : 'tile-back-h';
+            
+            let html = '';
+            for(let k=0; k<count; k++) {
+                html += `<div class="${cls}"></div>`;
+            }
+            div.innerHTML = html;
+        });
+    }
+}
+
+// Start
+window.onload = () => {
+    new Game();
+};
+</script>
+</body>
+</html>
