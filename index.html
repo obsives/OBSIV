@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>家庭麻将局</title>
+    <style>
+        :root { --table-bg: #2d6a4f; --tile-w: 42px; --tile-h: 58px; --highlight: #ffec99; }
+        body { margin: 0; background: #1e1e1e; height: 100vh; font-family: "Kaiti SC", serif; overflow: hidden; user-select: none; -webkit-tap-highlight-color: transparent; color: white; }
+        
+        /* 登录大厅 */
+        #lobby { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #1e1e1e; z-index: 999; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px; }
+        input { padding: 12px; border-radius: 8px; border: none; font-size: 16px; text-align: center; width: 180px; }
+        button.btn-primary { padding: 12px 30px; border-radius: 30px; border: none; background: #d6336c; color: white; font-size: 16px; font-weight: bold; cursor: pointer; }
+        
+        /* 游戏界面 */
+        #game-screen { display: none; width: 100%; height: 100%; position: relative; background: var(--table-bg); }
+        #mahjong-table { width: 100%; height: 100%; display: grid; grid-template-rows: 1fr 2fr 1fr; grid-template-columns: 1fr 2fr 1fr; }
+        
+        /* 弃牌区 */
+        #center-area { grid-row: 2; grid-column: 2; background: rgba(0,0,0,0.15); border-radius: 12px; position: relative; display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 2px; padding: 4px; }
+        .discard-zone { display: flex; flex-wrap: wrap; gap: 2px; align-content: flex-start; }
+        .dz-bottom { transform: rotate(0deg); justify-content: center; grid-row: 2; grid-column: 1/span 2; margin-top: auto; }
+        .dz-right { transform: rotate(-90deg); flex-direction: row-reverse; grid-row: 1/span 2; grid-column: 2; align-items: center; width: 100%; height: 100%; }
+        .dz-top { transform: rotate(180deg); justify-content: center; grid-row: 1; grid-column: 1/span 2; margin-bottom: auto; }
+        .dz-left { transform: rotate(90deg); flex-direction: row-reverse; grid-row: 1/span 2; grid-column: 1; align-items: center; width: 100%; height: 100%; }
+
+        .tile-sm { width: 22px; height: 30px; background: #f8f9fa; border-radius: 2px; display: flex; justify-content: center; align-items: center; }
+
+        /* 手牌 */
+        .player-hand { position: absolute; display: flex; justify-content: center; align-items: center; }
+        #my-hand { bottom: 10px; left:0; right:0; height: 80px; z-index: 100; }
+        
+        .tile { width: var(--tile-w); height: var(--tile-h); background: #f8f9fa; border-radius: 4px; border: 1px solid #ccc; box-shadow: 1px 3px 4px rgba(0,0,0,0.4); margin: 0 1px; position: relative; transition: 0.2s; }
+        .tile.selected { transform: translateY(-15px); border: 2px solid var(--highlight); }
+        .tile.draw { margin-left: 15px; }
+        
+        /* 对手背部 */
+        .tile-back { background: #1b4332; border: 1px solid rgba(255,255,255,0.2); border-radius: 3px; }
+        .tb-v { width: 16px; height: 34px; } 
+        .tb-h { width: 24px; height: 36px; } 
+        
+        #hand-right { right: 5px; top:0; bottom:0; flex-direction: column; justify-content: center; align-items: center;}
+        #hand-top { top: 5px; left:0; right:0; justify-content: center; align-items: flex-start;}
+        #hand-left { left: 5px; top:0; bottom:0; flex-direction: column; justify-content: center; align-items: center;}
+
+        .name-tag { position: absolute; font-size: 10px; color: #ddd; background: rgba(0,0,0,0.5); padding: 2px 4px; border-radius: 4px;}
+        
+        /* 指示灯 */
+        .turn-indicator { position: absolute; width: 8px; height: 8px; background: #aaa; border-radius: 50%; }
+        .turn-active { background: #ffd43b; box-shadow: 0 0 8px #ffd43b; }
+        #ind-bottom { bottom: 10px; left: 50%; }
+        #ind-right { right: 10px; top: 50%; }
+        #ind-top { top: 10px; left: 50%; }
+        #ind-left { left: 10px; top: 50%; }
+    </style>
+    <script src="/socket.io/socket.io.js"></script>
+</head>
+<body>
+
+<div id="lobby">
+    <h1>家庭麻将</h1>
+    <input type="text" id="input-name" placeholder="你的名字" maxlength="6">
+    <input type="text" id="input-room" placeholder="房间号 (如 888)" value="888">
+    <button class="btn-primary" onclick="joinGame()">加入房间</button>
+    <div id="lobby-msg" style="color: #aaa; font-size: 12px;">四人输入相同房间号即可开始</div>
+</div>
+
+<div id="game-screen">
+    <div id="mahjong-table">
+        <div id="center-area">
+            <div id="dz-0" class="discard-zone dz-bottom"></div>
+            <div id="dz-1" class="discard-zone dz-right"></div>
+            <div id="dz-2" class="discard-zone dz-top"></div>
+            <div id="dz-3" class="discard-zone dz-left"></div>
+            <div id="center-info" style="position:absolute; top:45%; left:50%; transform:translate(-50%,-50%); font-size:12px; text-align:center; color:white;">等待加入...</div>
+            <div id="ind-bottom" class="turn-indicator"></div>
+            <div id="ind-right" class="turn-indicator"></div>
+            <div id="ind-top" class="turn-indicator"></div>
+            <div id="ind-left" class="turn-indicator"></div>
+        </div>
+
+        <div id="hand-top" class="player-hand"></div>
+        <div id="hand-left" class="player-hand"></div>
+        <div id="hand-right" class="player-hand"></div>
+        <div id="my-hand" class="player-hand"></div>
+        
+        <button id="btn-discard" class="btn-primary" style="position:absolute; bottom: 100px; left:50%; transform:translateX(-50%); padding: 8px 20px; display:none;">出牌</button>
+    </div>
+</div>
+
+<script>
+    const socket = io();
+    let myIndex = -1;
+    let selectedIndex = -1;
+    let currentHand = [];
+    let isMyTurn = false;
+
+    const SVGMaker = {
+        create(type, val) {
+            let c = '';
+            if(type==='m') c=`<text x="50%" y="60%" text-anchor="middle" font-size="70" fill="#8B0000" font-weight="bold">${['一','二','三','四','五','六','七','八','九'][val-1]}</text><text x="50%" y="85%" text-anchor="middle" font-size="20" fill="#8B0000">万</text>`;
+            else if(type==='p') c=`<circle cx="50%" cy="50%" r="25" fill="#1864AB" /><text x="50%" y="55%" text-anchor="middle" fill="white" font-size="20" font-weight="bold">${val}</text>`; 
+            else if(type==='s') c=`<text x="50%" y="65%" text-anchor="middle" font-size="60" fill="#2B8A3E" font-weight="bold">${val}</text>`;
+            else if(type==='z') c=`<text x="50%" y="65%" text-anchor="middle" font-size="60" fill="${val===5?'#d00':val===6?'#0a0':'#000'}" font-weight="bold">${['东','南','西','北','中','发','白'][val-1]}</text>`;
+            return `<svg viewBox="0 0 100 120" width="100%" height="100%">${c}</svg>`;
+        }
+    };
+
+    function joinGame() {
+        const name = document.getElementById('input-name').value || 'Player';
+        const room = document.getElementById('input-room').value;
+        socket.emit('joinRoom', { roomId: room, playerName: name });
+        document.getElementById('lobby').style.display = 'none';
+        document.getElementById('game-screen').style.display = 'block';
+    }
+
+    socket.on('roomUpdate', (data) => {
+        if(!data.gameStarted) document.getElementById('center-info').innerText = `已加入: ${data.players.length}/4\n${data.players.map(p=>p.name).join(", ")}`;
+    });
+
+    socket.on('gameState', (state) => {
+        myIndex = state.myIndex;
+        currentHand = state.myHand;
+        const activeIdx = state.activePlayerIndex;
+        
+        document.getElementById('center-info').innerText = `剩: ${state.deckCount}`;
+
+        // 更新指示灯
+        for(let i=0; i<4; i++) {
+            const relativePos = (i - myIndex + 4) % 4; 
+            const domId = ['ind-bottom', 'ind-right', 'ind-top', 'ind-left'][relativePos];
+            const el = document.getElementById(domId);
+            if(i === activeIdx) el.classList.add('turn-active');
+            else el.classList.remove('turn-active');
+        }
+
+        // 更新对手和弃牌
+        state.playersPublic.forEach((p, serverIdx) => {
+            const relativePos = (serverIdx - myIndex + 4) % 4;
+            const dzId = `dz-${relativePos}`;
+            document.getElementById(dzId).innerHTML = p.discards.map(t => `<div class="tile-sm">${SVGMaker.create(t.type, t.val)}</div>`).join('');
+
+            if(relativePos !== 0) {
+                const handDivId = ['','hand-right','hand-top','hand-left'][relativePos];
+                const cls = relativePos === 2 ? 'tb-h' : 'tb-v';
+                let html = `<div class="name-tag">${p.name}</div>`;
+                for(let k=0; k<p.handCount; k++) html += `<div class="tile-back ${cls}"></div>`;
+                document.getElementById(handDivId).innerHTML = html;
+            }
+        });
+
+        renderMyHand(currentHand, state.lastDraw, activeIdx === myIndex);
+    });
+
+    socket.on('gameOver', (msg) => { alert(msg); location.reload(); });
+
+    function renderMyHand(hand, lastDrawCard, isMyTurnNow) {
+        isMyTurn = isMyTurnNow;
+        const div = document.getElementById('my-hand');
+        div.innerHTML = '';
+        const btn = document.getElementById('btn-discard');
+        btn.style.display = 'none';
+
+        hand.forEach((t, i) => {
+            const isDraw = isMyTurn && (hand.length % 3 === 2) && (i === hand.length - 1);
+            const el = document.createElement('div');
+            el.className = `tile ${isDraw ? 'draw' : ''} ${i === selectedIndex ? 'selected' : ''}`;
+            el.innerHTML = SVGMaker.create(t.type, t.val);
+            el.onclick = () => onTileClick(i);
+            div.appendChild(el);
+        });
+    }
+
+    function onTileClick(index) {
+        if(!isMyTurn || currentHand.length % 3 !== 2) return;
+        if(selectedIndex === index) {
+            socket.emit('playCard', { roomId: document.getElementById('input-room').value, cardIndex: index });
+            selectedIndex = -1;
+        } else {
+            selectedIndex = index;
+            renderMyHand(currentHand, null, true);
+            const btn = document.getElementById('btn-discard');
+            btn.style.display = 'block';
+            btn.onclick = () => {
+                 socket.emit('playCard', { roomId: document.getElementById('input-room').value, cardIndex: index });
+                 selectedIndex = -1;
+            };
+        }
+    }
+</script>
+</body>
+</html>
